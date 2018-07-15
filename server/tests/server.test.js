@@ -240,7 +240,7 @@ describe('POST /users', () => {
           expect(user).toBeTruthy();
           expect(user.password).not.toBe(password);
           done();
-        })
+        }).catch((e) => done(e));
       })
   });
 
@@ -266,3 +266,60 @@ describe('POST /users', () => {
       .end(done);
   })
 });
+
+describe('POST /users/login', () => {
+  it('should login user and return auth token', (done) => {
+    request(app)
+    .post('/users/login')
+    .send({
+      email: users[1].email,
+      password: users[1].password
+    })
+    .expect(200)
+    .expect((res) => {
+      // notacijo ['x-auth'] potrebujemo zato, ker dot notacija ne more imeli "-" v imenu
+      expect(res.headers['x-auth']).toBeTruthy();
+      expect(res.body._id).toBeTruthy();
+      expect(res.body.email).toBe(users[1].email);
+    })
+    .end((err, res) => {
+      if (err) {
+        return done(err);
+      }
+      User.findById(users[1]._id).then((user) => {
+        expect(user).toBeTruthy();
+        expect(user.tokens).not.toEqual([]);
+        // What toObject() does is it returns just the object as you would expect it, 
+        // without all the mongoose-specific properties (stuff like _id, __v etc)
+        expect(user.toObject().tokens[0]).toMatchObject({
+          access : 'auth',
+          token : res.headers['x-auth']
+        });
+        done();
+      }).catch((e) => done(e));
+    });
+  });
+
+  it('should reject invalid login', (done) => {
+    request(app)
+    .post('/users/login')
+    .send({
+      email: users[1].email,
+      password: users[1].password + '!'
+    })
+    .expect(400)
+    .expect((res) => {
+      // notacijo ['x-auth'] potrebujemo zato, ker dot notacija ne more imeli "-" v imenu
+      expect(res.headers['x-auth']).toBeFalsy();
+    })
+    .end((err, res) => {
+      if (err) {
+        return done(err);
+      }
+      User.findById(users[1]._id).then((user) => {
+        expect(user.tokens.length).toBe(0);
+        done();
+      }).catch((e) => done(e));
+    });
+  });
+})
