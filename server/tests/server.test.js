@@ -4,28 +4,14 @@ const { ObjectID } = require('mongodb');
 
 const { app } = require('./../server');
 const { Todo } = require('./../models/todo');
+var { User } = require('./../models/user');
+const { todos, populateTodos, users, populateUsers } = require('./seed/seed');
 
-// seed data for the tests
-const todos = [{
-  _id: new ObjectID(),
-  text: 'First test todo'
-}, {
-  _id: new ObjectID(),
-  text: 'Second test todo',
-  completed: true,
-  completedAt: 123
-}];
-
-beforeEach((done) => {
-  // se pokliče pred vsakim testom - izbrišem celo bazo todojev
-  Todo.remove({}).then(() => {
-    // nato naložim todoje, ki jih imam za seed data
-    Todo.insertMany(todos);
-  }).then(() => done());
-});
+beforeEach(populateUsers);
+beforeEach(populateTodos);
 
 describe('POST /todos', () => {
-  it('should create a new todo', (done) => { // tole je asinhrono, zato moraš počakati na todo
+  it('should create a new todo', (done) => { // tole je asinhrono, zato moraš počakati na "done"
     var text = 'Test todo text';
 
     request(app)
@@ -201,4 +187,82 @@ describe('PATCH /todos/:id', () => {
       })
       .end(done);
   });
+});
+
+describe('GET /users/me', () => {
+  it('should return user if authenticated', (done) => {
+    request(app)
+      .get('/users/me')
+      // s tem set-om nastavim header get klica
+      .set('x-auth', users[0].tokens[0].token)
+      .expect(200)
+      .expect((res) => {
+        expect(res.body._id).toBe(users[0]._id.toHexString());
+        expect(res.body.email).toBe(users[0].email);
+      })
+      .end(done);
+  });
+
+  it('should return 401 if not authenticated', (done) => {
+    request(app)
+      .get('/users/me')
+      // s tem set-om nastavim header get klica
+      .expect(401)
+      .expect((res) => {
+        // expect(res.body._id).toBeFalsy();
+        // če primerjam objekte, ne morem uporabiti toBe ampak toEqual
+        expect(res.body).toEqual({});
+      })
+      .end(done);
+  });
+});
+
+describe('POST /users', () => {
+  it('should create a user', (done) => {
+    var email = 'test@example.com';
+    var password = '123abc!';
+
+    request(app)
+      .post('/users')
+      .send({ email, password })
+      .expect(200)
+      .expect((res) => {
+        // notacijo ['x-auth'] potrebujemo zato, ker dot notacija ne more imeli "-" v imenu
+        expect(res.headers['x-auth']).toBeTruthy();
+        expect(res.body._id).toBeTruthy();
+        expect(res.body.email).toBe(email);
+      })
+      .end((err) => {
+        if (err) {
+          return done(err);
+        }
+        User.findOne({ email }).then((user) => {
+          expect(user).toBeTruthy();
+          expect(user.password).not.toBe(password);
+          done();
+        })
+      })
+  });
+
+  it('should return validation errors if request invalid', (done) => {
+    request(app)
+      .post('/users')
+      .send({
+        email: 'testexample.com',
+        password: '30947'
+      })
+      .expect(400)
+      .end(done);
+  });
+
+  it('should not create user if email in use', (done) => {
+    request(app)
+      .post('/users')
+      .send({
+        email: users[0].email,
+        password: '123abc!'
+      })
+      .expect(400)
+      .end(done);
+  })
 });
